@@ -465,12 +465,15 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     // Measuring the real peak each frame avoids needlessly crushing the whole image.
     m_ToneMapRenderParams.peak_detect_params = &pl_peak_detect_high_quality_params;
 
-    // Hosts commonly encode their SDR white level well below the 203 nit reference
-    // white that libplacebo assumes for an SDR target, and by default libplacebo
-    // clamps its output to the source's peak so such streams render dim. Allowing
-    // range expansion maps the detected content peak up to the target's white level
-    // instead, restoring the brightness the content had on the host.
-    m_ToneMapColorMapParams.inverse_tone_mapping = true;
+    // The default spline tone curve adapts its knee point to the scene average,
+    // which visibly lifts shadows when the source range is close to the target's,
+    // and the default perceptual gamut mapping desaturates colors near the gamut
+    // boundary even when they're already in gamut. Since much of a typical stream
+    // is desktop or game content mastered well within an SDR-sized range, favor
+    // accuracy instead: BT.2390 only compresses the range near the source peak,
+    // and colorimetric clipping reproduces everything in gamut exactly.
+    m_ToneMapColorMapParams.tone_mapping_function = &pl_tone_map_bt2390;
+    m_ToneMapColorMapParams.gamut_mapping = &pl_gamut_map_clip;
 
     unsigned int instanceExtensionCount = 0;
     if (!SDL_Vulkan_GetInstanceExtensions(params->window, &instanceExtensionCount, nullptr)) {
@@ -1170,6 +1173,11 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
     // exposure boost applied to legitimately dark scenes, and the upper clamp
     // preserves normal tone mapping for content brighter than SDR white.
     if (m_ToneMapToSdr) {
+        // Claim full contrast for the target so black point compensation doesn't
+        // lift the source's shadows. SDR streams are presented without any black
+        // point remapping, so tone mapped streams should match.
+        targetFrame.color.hdr.min_luma = PL_COLOR_HDR_BLACK;
+
         struct pl_hdr_metadata detected = {};
         if (pl_renderer_get_hdr_metadata(m_Renderer, &detected) && detected.max_pq_y > 0.0f) {
             float peakNits = pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, detected.max_pq_y);
