@@ -64,6 +64,8 @@ private:
 
     bool createSwapchain(int depth);
     bool createOverlay(pl_overlay* overlay, SDL_Surface* surface);
+    void logRenderDiagnostics(const pl_frame* mappedFrame, const pl_frame* targetFrame,
+                              const pl_render_params* renderParams);
     bool mapAvFrameToPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     void unmapAvFrameFromPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     bool populateQueues(int videoFormat);
@@ -113,6 +115,11 @@ private:
 
     // Rendering parameters used when libplacebo is performing tone mapping
     pl_render_params m_ToneMapRenderParams = {};
+
+    // Render output diagnostics, enabled by setting PLVK_DIAG in the environment
+    bool m_DiagEnabled = false;
+    int m_DiagFramesRendered = 0;
+    pl_renderer m_DiagRenderer = nullptr;
 
 #ifdef PLVK_USE_EARLY_RENDER_TO_WAIT
     pl_overlay m_EmptyOverlay = {};

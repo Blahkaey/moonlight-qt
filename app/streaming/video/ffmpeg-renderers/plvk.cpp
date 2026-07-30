@@ -180,6 +180,7 @@ PlVkRenderer::~PlVkRenderer()
         // Hold DRM master in case the Vulkan implmentation wants to restore DRM state
         DrmMasterLocker locker;
 
+        pl_renderer_destroy(&m_DiagRenderer);
         pl_renderer_destroy(&m_Renderer);
         pl_swapchain_destroy(&m_Swapchain);
 #ifdef Q_OS_DARWIN
@@ -451,6 +452,8 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Tone mapping HDR content for SDR output");
     }
+
+    m_DiagEnabled = !params->testOnly && qEnvironmentVariableIsSet("PLVK_DIAG");
 
     // These are only used when we're actually tone mapping, since peak detection and
     // dithering cost GPU time that SDR and HDR passthrough rendering don't need.
@@ -996,6 +999,91 @@ void PlVkRenderer::cleanupRenderContext()
     }
 }
 
+// Render the current frame again with identical parameters into a CPU-readable
+// texture and log sample values from it, along with the content peak that peak
+// detection has measured. This shows whether incorrect output on the glass was
+// rendered that way or was misinterpreted later in the display chain.
+void PlVkRenderer::logRenderDiagnostics(const pl_frame* mappedFrame, const pl_frame* targetFrame,
+                                        const pl_render_params* renderParams)
+{
+    struct pl_hdr_metadata detected = {};
+    if (pl_renderer_get_hdr_metadata(m_Renderer, &detected)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Diag: detected content peak: %.1f nits (avg %.1f nits)",
+                    pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, detected.max_pq_y),
+                    pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, detected.avg_pq_y));
+    }
+    else {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Diag: peak detection has not measured a content peak");
+    }
+
+    pl_fmt fmt = targetFrame->planes[0].texture->params.format;
+
+    pl_tex_params texParams = {};
+    texParams.w = targetFrame->planes[0].texture->params.w;
+    texParams.h = targetFrame->planes[0].texture->params.h;
+    texParams.format = fmt;
+    texParams.renderable = true;
+    texParams.host_readable = true;
+    pl_tex diagTex = pl_tex_create(m_Vulkan->gpu, &texParams);
+    if (!diagTex) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Diag: pl_tex_create() failed for format %s",
+                    fmt->name);
+        return;
+    }
+
+    if (m_DiagRenderer == nullptr) {
+        m_DiagRenderer = pl_renderer_create(m_Log, m_Vulkan->gpu);
+    }
+
+    pl_frame diagTarget = *targetFrame;
+    diagTarget.planes[0].texture = diagTex;
+    diagTarget.num_overlays = 0;
+    diagTarget.overlays = nullptr;
+
+    if (m_DiagRenderer == nullptr || !pl_render_image(m_DiagRenderer, mappedFrame, &diagTarget, renderParams)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Diag: replica render failed");
+        pl_tex_destroy(m_Vulkan->gpu, &diagTex);
+        return;
+    }
+
+    // Sample a grid of 8x3 points across the video area
+    int cropX = (int)targetFrame->crop.x0;
+    int cropY = (int)targetFrame->crop.y0;
+    int cropW = (int)(targetFrame->crop.x1 - targetFrame->crop.x0);
+    int cropH = (int)(targetFrame->crop.y1 - targetFrame->crop.y0);
+    std::vector<uint8_t> row((size_t)texParams.w * fmt->texel_size);
+    for (int i = 1; i <= 3; i++) {
+        int y = SDL_clamp(cropY + (cropH * i) / 4, 0, texParams.h - 1);
+
+        pl_tex_transfer_params xferParams = {};
+        xferParams.tex = diagTex;
+        xferParams.rc = { 0, y, 0, texParams.w, y + 1, 1 };
+        xferParams.row_pitch = (size_t)texParams.w * fmt->texel_size;
+        xferParams.ptr = row.data();
+        if (!pl_tex_download(m_Vulkan->gpu, &xferParams)) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Diag: pl_tex_download() failed");
+            break;
+        }
+
+        char line[512];
+        int pos = SDL_snprintf(line, sizeof(line), "Diag: %s row %d:", fmt->name, y);
+        for (int j = 0; j < 8; j++) {
+            int x = SDL_clamp(cropX + (cropW * (2 * j + 1)) / 16, 0, texParams.w - 1);
+            const uint8_t* px = &row[(size_t)x * fmt->texel_size];
+            pos += SDL_snprintf(line + pos, sizeof(line) - pos, " (%u,%u,%u)",
+                                px[0], px[1], px[2]);
+        }
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", line);
+    }
+
+    pl_tex_destroy(m_Vulkan->gpu, &diagTex);
+}
+
 void PlVkRenderer::renderFrame(AVFrame *frame)
 {
     pl_frame mappedFrame, targetFrame;
@@ -1135,6 +1223,12 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()
+    }
+
+    // Periodically dump what we're actually rendering, to tell apart a bad render
+    // from a bad interpretation of a good render further down the display chain.
+    if (m_DiagEnabled && (++m_DiagFramesRendered == 300 || m_DiagFramesRendered % 1800 == 0)) {
+        logRenderDiagnostics(&mappedFrame, &targetFrame, renderParams);
     }
 
     // Submit the frame for display and swap buffers
