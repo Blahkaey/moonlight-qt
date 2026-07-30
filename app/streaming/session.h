@@ -185,6 +185,7 @@ private:
     static
     bool chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                        StreamingPreferences::RendererSelection renderer,
+                       StreamingPreferences::HdrOutputMode hdrOutputMode,
                        SDL_Window* window, int videoFormat, int width, int height,
                        int frameRate, bool enableVsync, bool enableFramePacing,
                        bool testOnly,

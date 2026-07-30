@@ -321,6 +321,10 @@ StreamCommandLineParser::StreamCommandLineParser()
         {"fullscreen", StreamingPreferences::CSK_FULLSCREEN},
         {"always",     StreamingPreferences::CSK_ALWAYS},
     };
+    m_HdrOutputModeMap = {
+        {"display",  StreamingPreferences::HOM_AUTO},
+        {"tone-map", StreamingPreferences::HOM_TONE_MAP_SDR},
+    };
 }
 
 StreamCommandLineParser::~StreamCommandLineParser()
@@ -371,6 +375,7 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addChoiceOption("capture-system-keys", "capture system key combos", m_CaptureSysKeysModeMap.keys());
     parser.addChoiceOption("video-codec", "video codec", m_VideoCodecMap.keys());
     parser.addChoiceOption("video-decoder", "video decoder", m_VideoDecoderMap.keys());
+    parser.addChoiceOption("hdr-output", "HDR display handling", m_HdrOutputModeMap.keys());
 
     if (!parser.parse(args)) {
         parser.showError(parser.errorText());
@@ -504,6 +509,11 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     // Resolve --video-decoder option
     if (parser.isSet("video-decoder")) {
         preferences->videoDecoderSelection = mapValue(m_VideoDecoderMap, parser.getChoiceOptionValue("video-decoder"));
+    }
+
+    // Resolve --hdr-output option
+    if (parser.isSet("hdr-output")) {
+        preferences->hdrOutputMode = mapValue(m_HdrOutputModeMap, parser.getChoiceOptionValue("hdr-output"));
     }
 
     // This method will not return and terminates the process if --version or

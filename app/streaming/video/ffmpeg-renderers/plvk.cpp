@@ -415,6 +415,25 @@ bool PlVkRenderer::isExtensionSupportedByPhysicalDevice(VkPhysicalDevice device,
     return false;
 }
 
+bool PlVkRenderer::shouldToneMapToSdr(PDECODER_PARAMETERS params)
+{
+    // Tone mapping is only relevant for HDR streams.
+    //
+    // NB: This must apply to test-only renderers too. They share the real streaming
+    // window (see Session::populateDecoderProperties()), so a test-only instance that
+    // takes the passthrough path applies the wide colorspace hint below and flips the
+    // window's Metal layer into EDR mode. That state outlives the test renderer and
+    // adds a spurious sRGB decode to the real renderer's SDR tone-mapped output.
+    if (!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT)) {
+        return false;
+    }
+
+    // Otherwise we pass the HDR signal through and let the display, compositor, or OS
+    // deal with it. On platforms where nothing in that chain accepts PQ, swapchain
+    // colorspace negotiation gives us an SDR target anyway and we tone map regardless.
+    return params->hdrOutputMode == StreamingPreferences::HOM_TONE_MAP_SDR;
+}
+
 #define POPULATE_FUNCTION(name) \
     fn_##name = (PFN_##name)m_PlVkInstance->get_proc_addr(m_PlVkInstance->instance, #name); \
     if (fn_##name == nullptr) { \
@@ -427,6 +446,22 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
 {
     m_Window = params->window;
     m_MaxVideoFps = params->frameRate;
+    m_ToneMapToSdr = shouldToneMapToSdr(params);
+    if (m_ToneMapToSdr && !params->testOnly) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Tone mapping HDR content for SDR output");
+    }
+
+    // These are only used when we're actually tone mapping, since peak detection and
+    // dithering cost GPU time that SDR and HDR passthrough rendering don't need.
+    m_ToneMapRenderParams = pl_render_fast_params;
+    m_ToneMapRenderParams.color_map_params = &pl_color_map_high_quality_params;
+    m_ToneMapRenderParams.dither_params = &pl_dither_default_params;
+
+    // Host desktop captures are tagged with the static metadata of the host's display,
+    // which usually claims a far higher peak luminance than the content actually uses.
+    // Measuring the real peak each frame avoids needlessly crushing the whole image.
+    m_ToneMapRenderParams.peak_detect_params = &pl_peak_detect_high_quality_params;
 
     unsigned int instanceExtensionCount = 0;
     if (!SDL_Vulkan_GetInstanceExtensions(params->window, &instanceExtensionCount, nullptr)) {
@@ -489,8 +524,10 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     //
     // For HDR streaming, we try to find an HDR-capable Vulkan device first then
     // try another search without the HDR requirement if the first attempt fails.
-    if (!chooseVulkanDevice(params, params->videoFormat & VIDEO_FORMAT_MASK_10BIT) &&
-        (!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT) || !chooseVulkanDevice(params, false))) {
+    // HDR output capability is irrelevant if we're tone mapping to SDR ourselves.
+    bool hdrOutputPreferred = (params->videoFormat & VIDEO_FORMAT_MASK_10BIT) && !m_ToneMapToSdr;
+    if (!chooseVulkanDevice(params, hdrOutputPreferred) &&
+        (!hdrOutputPreferred || !chooseVulkanDevice(params, false))) {
         return false;
     }
 
@@ -620,7 +657,10 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     // Set an initial wide colorspace hint to ensure that MoltenVK sets wantsExtendedDynamicRangeContent
     // before we request the first drawable. If we don't do this, our Metal layer ends up stuck in SDR
     // mode even if we later change the colorspace to VK_COLOR_SPACE_HDR10_ST2084_EXT.
-    if (params->videoFormat & VIDEO_FORMAT_MASK_10BIT) {
+    //
+    // We deliberately skip this when tone mapping, because we want the Metal layer to stay in SDR
+    // mode so libplacebo renders into an SDR swapchain rather than handing PQ off to CoreAnimation.
+    if ((params->videoFormat & VIDEO_FORMAT_MASK_10BIT) && !m_ToneMapToSdr) {
         pl_color_space wideColorspace = {};
         wideColorspace.primaries = PL_COLOR_PRIM_BT_709;
         wideColorspace.transfer = PL_COLOR_TRC_SCRGB;
@@ -976,16 +1016,21 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
         m_LastColorspace = mappedFrame.color;
         SDL_assert(pl_color_space_equal(&mappedFrame.color, &m_LastColorspace));
 
+        // Ask for an SDR swapchain when we are tone mapping, so the target colorspace
+        // differs from the frame's and libplacebo performs the conversion itself.
+        bool useSdrSwapchain = m_ToneMapToSdr;
+
 #ifdef Q_OS_DARWIN
         // There is a gamma mismatch on macOS between what libplacebo thinks BT.709
         // should use and what the Metal layer actually displays. Use sRGB for the
         // swapchain when the incoming frames are BT.709 as a workaround.
-        if (pl_color_space_equal(&mappedFrame.color, &pl_color_space_bt709)) {
+        useSdrSwapchain |= pl_color_space_equal(&mappedFrame.color, &pl_color_space_bt709);
+#endif
+
+        if (useSdrSwapchain) {
             pl_swapchain_colorspace_hint(m_Swapchain, &pl_color_space_srgb);
         }
-        else
-#endif
-        {
+        else {
             pl_swapchain_colorspace_hint(m_Swapchain, &mappedFrame.color);
         }
     }
@@ -1074,10 +1119,19 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
     beginRenderTiming();
 #endif
 
+    // Use our tone mapping parameters only if libplacebo will actually be converting
+    // HDR content for an SDR target. This also covers cases where the swapchain ended
+    // up SDR without us asking for it, like an SDR display on a Wayland compositor.
+    const pl_render_params* renderParams = &pl_render_fast_params;
+    if (pl_color_transfer_is_hdr(mappedFrame.color.transfer) &&
+            !pl_color_transfer_is_hdr(targetFrame.color.transfer)) {
+        renderParams = &m_ToneMapRenderParams;
+    }
+
     // Render the video image and overlays into the swapchain buffer
     targetFrame.num_overlays = (int)overlays.size();
     targetFrame.overlays = overlays.data();
-    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, &pl_render_fast_params)) {
+    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, renderParams)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()

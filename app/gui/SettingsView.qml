@@ -871,6 +871,55 @@ Flickable {
                                     :
                                       qsTr("HDR streaming is not supported on this PC.")
                 }
+
+                Label {
+                    width: parent.width
+                    id: hdrOutputTitle
+                    text: qsTr("HDR display mode")
+                    font.pointSize: 12
+                    visible: enableHdr.enabled && StreamingPreferences.enableHdr
+                    wrapMode: Text.Wrap
+                }
+
+                AutoResizingComboBox {
+                    // ignore setting the index at first, and actually set it when the component is loaded
+                    Component.onCompleted: {
+                        var savedMode = StreamingPreferences.hdrOutputMode
+                        currentIndex = 0
+                        for (var i = 0; i < hdrOutputListModel.count; i++) {
+                            if (savedMode === hdrOutputListModel.get(i).val) {
+                                currentIndex = i
+                                break
+                            }
+                        }
+                        activated(currentIndex)
+                    }
+
+                    id: hdrOutputComboBox
+                    visible: hdrOutputTitle.visible
+                    hoverEnabled: true
+                    textRole: "text"
+                    model: ListModel {
+                        id: hdrOutputListModel
+                        ListElement {
+                            text: qsTr("Send HDR to my display")
+                            val: StreamingPreferences.HOM_AUTO
+                        }
+                        ListElement {
+                            text: qsTr("Convert HDR to SDR (tone mapping)")
+                            val: StreamingPreferences.HOM_TONE_MAP_SDR
+                        }
+                    }
+                    // ::onActivated must be used, as it only listens for when the index is changed by a human
+                    onActivated: {
+                        StreamingPreferences.hdrOutputMode = hdrOutputListModel.get(currentIndex).val
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Tone mapping converts the HDR stream for display on an SDR screen. Use it if your host is in HDR mode but your display is not HDR-capable, or if HDR content looks washed out.")
+                }
             }
         }
 

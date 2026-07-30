@@ -277,6 +277,7 @@ void Session::clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlag
 
 bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             StreamingPreferences::RendererSelection renderer,
+                            StreamingPreferences::HdrOutputMode hdrOutputMode,
                             SDL_Window* window, int videoFormat, int width, int height,
                             int frameRate, bool enableVsync, bool enableFramePacing, bool testOnly, IVideoDecoder*& chosenDecoder)
 {
@@ -297,6 +298,7 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.testOnly = testOnly;
     params.vds = vds;
     params.renderer = renderer;
+    params.hdrOutputMode = hdrOutputMode;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "V-sync %s",
@@ -399,6 +401,7 @@ void Session::getDecoderInfo(SDL_Window* window,
     // Try an HEVC Main10 decoder first to see if we have HDR support
     if (chooseDecoder(StreamingPreferences::VDS_FORCE_HARDWARE,
                       StreamingPreferences::RS_PROBE_ONLY,
+                      StreamingPreferences::HOM_AUTO,
                       window, VIDEO_FORMAT_H265_MAIN10, 1920, 1080, 60,
                       false, false, true, decoder)) {
         isHardwareAccelerated = decoder->isHardwareAccelerated();
@@ -413,6 +416,7 @@ void Session::getDecoderInfo(SDL_Window* window,
     // Try an AV1 Main10 decoder next to see if we have HDR support
     if (chooseDecoder(StreamingPreferences::VDS_FORCE_HARDWARE,
                       StreamingPreferences::RS_PROBE_ONLY,
+                      StreamingPreferences::HOM_AUTO,
                       window, VIDEO_FORMAT_AV1_MAIN10, 1920, 1080, 60,
                       false, false, true, decoder)) {
         // If we've got a working AV1 Main 10-bit decoder, we'll enable the HDR checkbox
@@ -426,10 +430,12 @@ void Session::getDecoderInfo(SDL_Window* window,
         // that supports HDR rendering with software decoded frames.
         if (chooseDecoder(StreamingPreferences::VDS_FORCE_SOFTWARE,
                           StreamingPreferences::RS_PROBE_ONLY,
+                          StreamingPreferences::HOM_AUTO,
                           window, VIDEO_FORMAT_H265_MAIN10, 1920, 1080, 60,
                           false, false, true, decoder) ||
             chooseDecoder(StreamingPreferences::VDS_FORCE_SOFTWARE,
                           StreamingPreferences::RS_PROBE_ONLY,
+                          StreamingPreferences::HOM_AUTO,
                           window, VIDEO_FORMAT_AV1_MAIN10, 1920, 1080, 60,
                           false, false, true, decoder)) {
             isHdrSupported = decoder->isHdrSupported();
@@ -445,6 +451,7 @@ void Session::getDecoderInfo(SDL_Window* window,
     // Try a regular hardware accelerated HEVC decoder now
     if (chooseDecoder(StreamingPreferences::VDS_FORCE_HARDWARE,
                       StreamingPreferences::RS_PROBE_ONLY,
+                      StreamingPreferences::HOM_AUTO,
                       window, VIDEO_FORMAT_H265, 1920, 1080, 60,
                       false, false, true, decoder)) {
         isHardwareAccelerated = decoder->isHardwareAccelerated();
@@ -459,6 +466,7 @@ void Session::getDecoderInfo(SDL_Window* window,
 #if 0 // See AV1 comment at the top of this function
     if (chooseDecoder(StreamingPreferences::VDS_FORCE_HARDWARE,
                       StreamingPreferences::RS_PROBE_ONLY,
+                      StreamingPreferences::HOM_AUTO,
                       window, VIDEO_FORMAT_AV1_MAIN8, 1920, 1080, 60,
                       false, false, true, decoder)) {
         isHardwareAccelerated = decoder->isHardwareAccelerated();
@@ -474,6 +482,7 @@ void Session::getDecoderInfo(SDL_Window* window,
     // This will fall back to software decoding, so it should always work.
     if (chooseDecoder(StreamingPreferences::VDS_AUTO,
                       StreamingPreferences::RS_PROBE_ONLY,
+                      StreamingPreferences::HOM_AUTO,
                       window, VIDEO_FORMAT_H264, 1920, 1080, 60,
                       false, false, true, decoder)) {
         isHardwareAccelerated = decoder->isHardwareAccelerated();
@@ -497,6 +506,7 @@ Session::getDecoderAvailability(SDL_Window* window,
 
     if (!chooseDecoder(vds,
                        StreamingPreferences::RS_PROBE_ONLY,
+                       StreamingPreferences::HOM_AUTO,
                        window, videoFormat, width, height, frameRate,
                        false, false, true, decoder)) {
         return DecoderAvailability::None;
@@ -519,6 +529,7 @@ bool Session::populateDecoderProperties(SDL_Window* window)
     // attempt to change the window's colorspace, causing washed out colors.
     if (!chooseDecoder(m_Preferences->videoDecoderSelection,
                        m_Preferences->rendererSelection,
+                       m_Preferences->hdrOutputMode,
                        window,
                        m_SupportedVideoFormats.first(),
                        m_StreamConfig.width,
@@ -2210,6 +2221,7 @@ void Session::exec()
                 // not if a GPU was removed or something).
                 if (!chooseDecoder(m_Preferences->videoDecoderSelection,
                                    m_Preferences->rendererSelection,
+                                   m_Preferences->hdrOutputMode,
                                    m_Window, m_ActiveVideoFormat, m_ActiveVideoWidth,
                                    m_ActiveVideoHeight, m_ActiveVideoFrameRate,
                                    enableVsync,

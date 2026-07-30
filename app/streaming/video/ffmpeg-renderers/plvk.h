@@ -67,6 +67,7 @@ private:
     bool mapAvFrameToPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     void unmapAvFrameFromPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     bool populateQueues(int videoFormat);
+    bool shouldToneMapToSdr(PDECODER_PARAMETERS params);
     bool chooseVulkanDevice(PDECODER_PARAMETERS params, bool hdrOutputRequired);
     bool tryInitializeDevice(VkPhysicalDevice device, VkPhysicalDeviceProperties* deviceProps,
                              PDECODER_PARAMETERS decoderParams, bool hdrOutputRequired);
@@ -105,6 +106,13 @@ private:
     pl_renderer m_Renderer = nullptr;
     pl_tex m_Textures[PL_MAX_PLANES] = {};
     pl_color_space m_LastColorspace = {};
+
+    // Set if we must tone map HDR content ourselves rather than passing it
+    // through to a display that can render it natively.
+    bool m_ToneMapToSdr = false;
+
+    // Rendering parameters used when libplacebo is performing tone mapping
+    pl_render_params m_ToneMapRenderParams = {};
 
 #ifdef PLVK_USE_EARLY_RENDER_TO_WAIT
     pl_overlay m_EmptyOverlay = {};

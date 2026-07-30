@@ -55,6 +55,13 @@ public:
     };
     Q_ENUM(RendererSelection)
 
+    enum HdrOutputMode
+    {
+        HOM_AUTO,
+        HOM_TONE_MAP_SDR
+    };
+    Q_ENUM(HdrOutputMode)
+
     enum WindowMode
     {
         WM_FULLSCREEN,
@@ -143,6 +150,7 @@ public:
     Q_PROPERTY(AudioConfig audioConfig MEMBER audioConfig NOTIFY audioConfigChanged)
     Q_PROPERTY(VideoCodecConfig videoCodecConfig MEMBER videoCodecConfig NOTIFY videoCodecConfigChanged)
     Q_PROPERTY(bool enableHdr MEMBER enableHdr NOTIFY enableHdrChanged)
+    Q_PROPERTY(HdrOutputMode hdrOutputMode MEMBER hdrOutputMode NOTIFY hdrOutputModeChanged)
     Q_PROPERTY(bool enableYUV444 MEMBER enableYUV444 NOTIFY enableYUV444Changed)
     Q_PROPERTY(VideoDecoderSelection videoDecoderSelection MEMBER videoDecoderSelection NOTIFY videoDecoderSelectionChanged)
     Q_PROPERTY(RendererSelection rendererSelection MEMBER rendererSelection NOTIFY rendererSelectionChanged)
@@ -192,6 +200,7 @@ public:
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
     bool enableHdr;
+    HdrOutputMode hdrOutputMode;
     bool enableYUV444;
     VideoDecoderSelection videoDecoderSelection;
     WindowMode windowMode;
@@ -218,6 +227,7 @@ signals:
     void audioConfigChanged();
     void videoCodecConfigChanged();
     void enableHdrChanged();
+    void hdrOutputModeChanged();
     void enableYUV444Changed();
     void videoDecoderSelectionChanged();
     void uiDisplayModeChanged();
