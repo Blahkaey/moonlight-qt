@@ -115,6 +115,7 @@ private:
 
     // Rendering parameters used when libplacebo is performing tone mapping
     pl_render_params m_ToneMapRenderParams = {};
+    pl_color_map_params m_ToneMapColorMapParams = {};
 
     // Render output diagnostics, enabled by setting PLVK_DIAG in the environment
     bool m_DiagEnabled = false;

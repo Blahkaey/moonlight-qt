@@ -420,11 +420,8 @@ bool PlVkRenderer::shouldToneMapToSdr(PDECODER_PARAMETERS params)
 {
     // Tone mapping is only relevant for HDR streams.
     //
-    // NB: This must apply to test-only renderers too. They share the real streaming
-    // window (see Session::populateDecoderProperties()), so a test-only instance that
-    // takes the passthrough path applies the wide colorspace hint below and flips the
-    // window's Metal layer into EDR mode. That state outlives the test renderer and
-    // adds a spurious sRGB decode to the real renderer's SDR tone-mapped output.
+    // NB: This must apply to test-only renderers too, so that they make the same
+    // device selection and swapchain decisions as the real renderer they stand in for.
     if (!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT)) {
         return false;
     }
@@ -458,13 +455,21 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     // These are only used when we're actually tone mapping, since peak detection and
     // dithering cost GPU time that SDR and HDR passthrough rendering don't need.
     m_ToneMapRenderParams = pl_render_fast_params;
-    m_ToneMapRenderParams.color_map_params = &pl_color_map_high_quality_params;
+    m_ToneMapColorMapParams = pl_color_map_high_quality_params;
+    m_ToneMapRenderParams.color_map_params = &m_ToneMapColorMapParams;
     m_ToneMapRenderParams.dither_params = &pl_dither_default_params;
 
     // Host desktop captures are tagged with the static metadata of the host's display,
     // which usually claims a far higher peak luminance than the content actually uses.
     // Measuring the real peak each frame avoids needlessly crushing the whole image.
     m_ToneMapRenderParams.peak_detect_params = &pl_peak_detect_high_quality_params;
+
+    // Hosts commonly encode their SDR white level well below the 203 nit reference
+    // white that libplacebo assumes for an SDR target, and by default libplacebo
+    // clamps its output to the source's peak so such streams render dim. Allowing
+    // range expansion maps the detected content peak up to the target's white level
+    // instead, restoring the brightness the content had on the host.
+    m_ToneMapColorMapParams.inverse_tone_mapping = true;
 
     unsigned int instanceExtensionCount = 0;
     if (!SDL_Vulkan_GetInstanceExtensions(params->window, &instanceExtensionCount, nullptr)) {
