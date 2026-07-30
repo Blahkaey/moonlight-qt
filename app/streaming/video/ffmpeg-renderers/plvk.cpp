@@ -451,6 +451,7 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     m_DiagEnabled = !params->testOnly && qEnvironmentVariableIsSet("PLVK_DIAG");
+    m_AssumeBt709Gamut = qEnvironmentVariableIsSet("PLVK_ASSUME_709_GAMUT");
 
     // These are only used when we're actually tone mapping, since peak detection and
     // dithering cost GPU time that SDR and HDR passthrough rendering don't need.
@@ -762,6 +763,16 @@ bool PlVkRenderer::mapAvFrameToPlacebo(const AVFrame *frame, pl_frame* mappedFra
     //
     // As a workaround, set full range manually in the mapped frame ourselves.
     mappedFrame->repr.levels = PL_COLOR_LEVELS_FULL;
+
+    // Diagnostic override: some hosts composite their SDR desktop into the HDR stream
+    // without remapping sRGB primaries to BT.2020, leaving BT.709 pixel values inside
+    // the BT.2020-tagged container. Retagging the frame as BT.709 skips the gamut
+    // conversion so such streams render with the colors the host actually displayed.
+    // The YCbCr matrix is left as signaled, since decoding round-trips whatever RGB
+    // values the host encoded regardless of which primaries they represent.
+    if (m_AssumeBt709Gamut) {
+        mappedFrame->color.primaries = PL_COLOR_PRIM_BT_709;
+    }
 
     return true;
 }

@@ -122,6 +122,10 @@ private:
     int m_DiagFramesRendered = 0;
     pl_renderer m_DiagRenderer = nullptr;
 
+    // Reinterpret HDR streams as containing BT.709 primaries, enabled by setting
+    // PLVK_ASSUME_709_GAMUT in the environment
+    bool m_AssumeBt709Gamut = false;
+
 #ifdef PLVK_USE_EARLY_RENDER_TO_WAIT
     pl_overlay m_EmptyOverlay = {};
     pl_overlay_part m_EmptyOverlayPart = {};
