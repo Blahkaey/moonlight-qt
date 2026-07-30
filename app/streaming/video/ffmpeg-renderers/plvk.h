@@ -64,8 +64,8 @@ private:
 
     bool createSwapchain(int depth);
     bool createOverlay(pl_overlay* overlay, SDL_Surface* surface);
-    void logRenderDiagnostics(const pl_frame* mappedFrame, const pl_frame* targetFrame,
-                              const pl_render_params* renderParams);
+    void logRenderDiagnostics(const AVFrame* frame, const pl_frame* mappedFrame,
+                              const pl_frame* targetFrame, const pl_render_params* renderParams);
     bool mapAvFrameToPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     void unmapAvFrameFromPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     bool populateQueues(int videoFormat);

@@ -1008,8 +1008,8 @@ void PlVkRenderer::cleanupRenderContext()
 // texture and log sample values from it, along with the content peak that peak
 // detection has measured. This shows whether incorrect output on the glass was
 // rendered that way or was misinterpreted later in the display chain.
-void PlVkRenderer::logRenderDiagnostics(const pl_frame* mappedFrame, const pl_frame* targetFrame,
-                                        const pl_render_params* renderParams)
+void PlVkRenderer::logRenderDiagnostics(const AVFrame* frame, const pl_frame* mappedFrame,
+                                        const pl_frame* targetFrame, const pl_render_params* renderParams)
 {
     struct pl_hdr_metadata detected = {};
     if (pl_renderer_get_hdr_metadata(m_Renderer, &detected)) {
@@ -1022,6 +1022,20 @@ void PlVkRenderer::logRenderDiagnostics(const pl_frame* mappedFrame, const pl_fr
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Diag: peak detection has not measured a content peak");
     }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Diag: avframe range=%d prim=%d trc=%d csp=%d fmt=%d",
+                frame->color_range, frame->color_primaries, frame->color_trc,
+                frame->colorspace, frame->format);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Diag: src repr sys=%d levels=%d, color prim=%d trc=%d hdr.max=%.1f hdr.maxcll=%.1f",
+                mappedFrame->repr.sys, mappedFrame->repr.levels,
+                mappedFrame->color.primaries, mappedFrame->color.transfer,
+                mappedFrame->color.hdr.max_luma, mappedFrame->color.hdr.max_cll);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Diag: dst color prim=%d trc=%d hdr.max=%.1f",
+                targetFrame->color.primaries, targetFrame->color.transfer,
+                targetFrame->color.hdr.max_luma);
 
     pl_fmt fmt = targetFrame->planes[0].texture->params.format;
 
@@ -1137,6 +1151,21 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
 
     pl_frame_from_swapchain(&targetFrame, &m_SwapchainFrame);
 
+    // When we're tone mapping, anchor the target's white level to the detected content
+    // peak so the brightest content maps to full white, rather than reproducing the
+    // host's absolute luminance. Hosts commonly encode their SDR desktop white well
+    // below the 203 nit reference white that libplacebo assumes for SDR targets,
+    // which would otherwise render the whole stream dim. The lower clamp bounds the
+    // exposure boost applied to legitimately dark scenes, and the upper clamp
+    // preserves normal tone mapping for content brighter than SDR white.
+    if (m_ToneMapToSdr) {
+        struct pl_hdr_metadata detected = {};
+        if (pl_renderer_get_hdr_metadata(m_Renderer, &detected) && detected.max_pq_y > 0.0f) {
+            float peakNits = pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, detected.max_pq_y);
+            targetFrame.color.hdr.max_luma = SDL_clamp(peakNits, 80.0f, PL_COLOR_SDR_WHITE);
+        }
+    }
+
     // We perform minimal processing under the overlay lock to avoid blocking threads updating the overlay
     SDL_AtomicLock(&m_OverlayLock);
     for (int i = 0; i < Overlay::OverlayMax; i++) {
@@ -1233,7 +1262,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
     // Periodically dump what we're actually rendering, to tell apart a bad render
     // from a bad interpretation of a good render further down the display chain.
     if (m_DiagEnabled && (++m_DiagFramesRendered == 300 || m_DiagFramesRendered % 1800 == 0)) {
-        logRenderDiagnostics(&mappedFrame, &targetFrame, renderParams);
+        logRenderDiagnostics(frame, &mappedFrame, &targetFrame, renderParams);
     }
 
     // Submit the frame for display and swap buffers
