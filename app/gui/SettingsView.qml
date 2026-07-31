@@ -1058,6 +1058,105 @@ Flickable {
         }
 
         GroupBox {
+            id: sshSettingsGroupBox
+            width: (parent.width - (parent.leftPadding + parent.rightPadding))
+            padding: 12
+            title: "<font color=\"skyblue\">" + qsTr("SSH Host Startup") + "</font>"
+            font.pointSize: 12
+
+            Column {
+                anchors.fill: parent
+                spacing: 5
+
+                CheckBox {
+                    id: sshAutoStartCheck
+                    width: parent.width
+                    text: qsTr("Start host software over SSH")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.sshAutoStart
+                    onCheckedChanged: {
+                        StreamingPreferences.sshAutoStart = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Clicking an offline PC will connect to the address below over SSH and run the command to start the host software. The host software is stopped again when your streaming session ends.")
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Host IP address")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                TextField {
+                    id: sshHostField
+                    width: parent.width
+                    font.pointSize: 12
+                    text: StreamingPreferences.sshHost
+                    onTextChanged: {
+                        StreamingPreferences.sshHost = text
+                    }
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Username")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                TextField {
+                    id: sshUsernameField
+                    width: parent.width
+                    font.pointSize: 12
+                    text: StreamingPreferences.sshUsername
+                    onTextChanged: {
+                        StreamingPreferences.sshUsername = text
+                    }
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Password")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                TextField {
+                    id: sshPasswordField
+                    width: parent.width
+                    font.pointSize: 12
+                    echoMode: TextInput.Password
+                    text: StreamingPreferences.sshPassword
+                    onTextChanged: {
+                        StreamingPreferences.sshPassword = text
+                    }
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Command")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                TextField {
+                    id: sshCommandField
+                    width: parent.width
+                    font.pointSize: 12
+                    placeholderText: "sunshine"
+                    text: StreamingPreferences.sshCommand
+                    onTextChanged: {
+                        StreamingPreferences.sshCommand = text
+                    }
+                }
+            }
+        }
+
+        GroupBox {
             id: uiSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
             padding: 12

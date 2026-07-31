@@ -8,9 +8,14 @@ import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
+import SshHostLauncher 1.0
 
 CenteredGridView {
     property ComputerModel computerModel : createModel()
+
+    // Index of the PC we're waiting to come online after starting
+    // its host software over SSH, or -1 if none
+    property int sshPendingIndex: -1
 
     id: pcGrid
     focus: true
@@ -34,6 +39,8 @@ CenteredGridView {
         // Setup signals on CM
         ComputerManager.computerAddCompleted.connect(addComplete)
 
+        SshHostLauncher.hostLaunchFailed.connect(sshLaunchFailed)
+
         // Highlight the first item if a gamepad is connected
         if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
             currentIndex = 0
@@ -42,6 +49,32 @@ CenteredGridView {
 
     StackView.onDeactivating: {
         ComputerManager.computerAddCompleted.disconnect(addComplete)
+
+        SshHostLauncher.hostLaunchFailed.disconnect(sshLaunchFailed)
+    }
+
+    function sshLaunchFailed(error)
+    {
+        if (sshPendingIndex !== -1) {
+            sshPendingIndex = -1
+            sshWaitTimer.stop()
+
+            errorDialog.text = qsTr("Failed to start the host software over SSH: %1").arg(error)
+            errorDialog.helpText = ""
+            errorDialog.open()
+        }
+    }
+
+    Timer {
+        id: sshWaitTimer
+        interval: 45000
+        onTriggered: {
+            pcGrid.sshPendingIndex = -1
+
+            errorDialog.text = qsTr("The PC didn't come online after starting the host software over SSH.")
+            errorDialog.helpText = ""
+            errorDialog.open()
+        }
     }
 
     function pairingComplete(error)
@@ -128,7 +161,7 @@ CenteredGridView {
             anchors.horizontalCenter: pcIcon.horizontalCenter
             anchors.verticalCenter: pcIcon.verticalCenter
             anchors.verticalCenterOffset: !model.online ? -18 : -16
-            visible: !model.statusUnknown && (!model.online || !model.paired)
+            visible: !model.statusUnknown && (!model.online || !model.paired) && pcGrid.sshPendingIndex !== index
             source: !model.online ? "qrc:/res/warning_FILL1_wght300_GRAD200_opsz24.svg" : "qrc:/res/baseline-lock-24px.svg"
             sourceSize {
                 width: !model.online ? 75 : 70
@@ -143,7 +176,7 @@ CenteredGridView {
             anchors.verticalCenterOffset: -15
             width: 75
             height: 75
-            visible: model.statusUnknown
+            visible: model.statusUnknown || pcGrid.sshPendingIndex === index
             running: visible
         }
 
@@ -219,30 +252,49 @@ CenteredGridView {
             }
         }
 
+        function launchOrPair() {
+            if (!model.serverSupported) {
+                errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(model.name)
+                errorDialog.helpText = ""
+                errorDialog.open()
+            }
+            else if (model.paired) {
+                // go to game view
+                var component = Qt.createComponent("AppView.qml")
+                var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name})
+                stackView.push(appView)
+            }
+            else {
+                var pin = computerModel.generatePinString()
+
+                // Kick off pairing in the background
+                computerModel.pairComputer(index, pin)
+
+                // Display the pairing dialog
+                pairDialog.pin = pin
+                pairDialog.open()
+            }
+        }
+
+        property bool isOnline: model.online
+        onIsOnlineChanged: {
+            // Proceed automatically once the host we started over SSH comes online
+            if (isOnline && pcGrid.sshPendingIndex === index) {
+                pcGrid.sshPendingIndex = -1
+                sshWaitTimer.stop()
+                SshHostLauncher.notifyHostOnline()
+                launchOrPair()
+            }
+        }
+
         onClicked: {
             if (model.online) {
-                if (!model.serverSupported) {
-                    errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(model.name)
-                    errorDialog.helpText = ""
-                    errorDialog.open()
-                }
-                else if (model.paired) {
-                    // go to game view
-                    var component = Qt.createComponent("AppView.qml")
-                    var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name})
-                    stackView.push(appView)
-                }
-                else {
-                    var pin = computerModel.generatePinString()
-
-                    // Kick off pairing in the background
-                    computerModel.pairComputer(index, pin)
-
-                    // Display the pairing dialog
-                    pairDialog.pin = pin
-                    pairDialog.open()
-                }
-            } else if (!model.online) {
+                launchOrPair()
+            } else if (SshHostLauncher.startHost()) {
+                // Wait for the host software we just launched to come online
+                pcGrid.sshPendingIndex = index
+                sshWaitTimer.restart()
+            } else {
                 // Using open() here because it may be activated by keyboard
                 pcContextMenu.open()
             }

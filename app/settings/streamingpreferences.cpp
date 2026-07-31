@@ -53,6 +53,11 @@
 #define SER_LANGUAGE "language"
 #define SER_RENDERER "renderer"
 #define SER_HDROUTPUT "hdroutput"
+#define SER_SSHAUTOSTART "sshautostart"
+#define SER_SSHHOST "sshhost"
+#define SER_SSHUSERNAME "sshusername"
+#define SER_SSHPASSWORD "sshpassword"
+#define SER_SSHCOMMAND "sshcommand"
 
 #define CURRENT_DEFAULT_VER 2
 
@@ -174,6 +179,11 @@ void StreamingPreferences::reload()
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
     language = static_cast<Language>(settings.value(SER_LANGUAGE,
                                                     static_cast<int>(Language::LANG_AUTO)).toInt());
+    sshAutoStart = settings.value(SER_SSHAUTOSTART, false).toBool();
+    sshHost = settings.value(SER_SSHHOST, QString()).toString();
+    sshUsername = settings.value(SER_SSHUSERNAME, QString()).toString();
+    sshPassword = settings.value(SER_SSHPASSWORD, QString()).toString();
+    sshCommand = settings.value(SER_SSHCOMMAND, QStringLiteral("sunshine")).toString();
 
 
     // Perform default settings updates as required based on last default version
@@ -366,6 +376,11 @@ void StreamingPreferences::save()
     settings.setValue(SER_SWAPFACEBUTTONS, swapFaceButtons);
     settings.setValue(SER_CAPTURESYSKEYS, captureSysKeysMode);
     settings.setValue(SER_KEEPAWAKE, keepAwake);
+    settings.setValue(SER_SSHAUTOSTART, sshAutoStart);
+    settings.setValue(SER_SSHHOST, sshHost);
+    settings.setValue(SER_SSHUSERNAME, sshUsername);
+    settings.setValue(SER_SSHPASSWORD, sshPassword);
+    settings.setValue(SER_SSHCOMMAND, sshCommand);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

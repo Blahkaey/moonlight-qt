@@ -165,6 +165,11 @@ public:
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
+    Q_PROPERTY(bool sshAutoStart MEMBER sshAutoStart NOTIFY sshAutoStartChanged)
+    Q_PROPERTY(QString sshHost MEMBER sshHost NOTIFY sshHostChanged)
+    Q_PROPERTY(QString sshUsername MEMBER sshUsername NOTIFY sshUsernameChanged)
+    Q_PROPERTY(QString sshPassword MEMBER sshPassword NOTIFY sshPasswordChanged)
+    Q_PROPERTY(QString sshCommand MEMBER sshCommand NOTIFY sshCommandChanged)
 
     Q_INVOKABLE bool retranslate();
 
@@ -209,6 +214,11 @@ public:
     Language language;
     CaptureSysKeysMode captureSysKeysMode;
     RendererSelection rendererSelection;
+    bool sshAutoStart;
+    QString sshHost;
+    QString sshUsername;
+    QString sshPassword;
+    QString sshCommand;
 
 signals:
     void displayModeChanged();
@@ -248,6 +258,11 @@ signals:
     void keepAwakeChanged();
     void languageChanged();
     void rendererSelectionChanged();
+    void sshAutoStartChanged();
+    void sshHostChanged();
+    void sshUsernameChanged();
+    void sshPasswordChanged();
+    void sshCommandChanged();
 
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);

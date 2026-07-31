@@ -50,6 +50,7 @@
 #include "gui/appmodel.h"
 #include "backend/autoupdatechecker.h"
 #include "backend/computermanager.h"
+#include "backend/sshhostlauncher.h"
 #include "backend/systemproperties.h"
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
@@ -959,6 +960,11 @@ int main(int argc, char *argv[])
                                                    [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                        return StreamingPreferences::get(qmlEngine);
                                                    });
+    qmlRegisterSingletonType<SshHostLauncher>("SshHostLauncher", 1, 0,
+                                              "SshHostLauncher",
+                                              [](QQmlEngine*, QJSEngine*) -> QObject* {
+                                                  return SshHostLauncher::get();
+                                              });
 
     // Create the identity manager on the main thread
     IdentityManager::get();

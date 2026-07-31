@@ -2,6 +2,7 @@
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
+#include "backend/sshhostlauncher.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -1315,6 +1316,15 @@ private:
 
             // Session is finished now
             emit m_Session->sessionFinished(m_Session->m_PortTestResults);
+        }
+
+        // Stop the SSH-launched host software if we started it. This must
+        // happen before quit() below, both so the SSH process is gone before
+        // we exit and because the blocking invoke requires the main thread
+        // to still be pumping events.
+        SshHostLauncher* sshLauncher = SshHostLauncher::getIfExists();
+        if (sshLauncher != nullptr) {
+            QMetaObject::invokeMethod(sshLauncher, "stopHost", Qt::BlockingQueuedConnection);
         }
 
         // Exit the entire program if requested
